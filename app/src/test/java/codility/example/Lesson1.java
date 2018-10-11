@@ -1,4 +1,4 @@
-package codility.example.one;
+package codility.example;
 
 import junit.framework.Assert;
 
