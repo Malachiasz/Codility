@@ -20,9 +20,13 @@ class Sample2 {
         runBlocking {
             log("start")
             launch(threadPoolContext) {
-                val data = downloadDataAsync()
-                // process the data on the UI thread
-                log(data)
+                try {
+                    val data = downloadDataAsync()
+                    // process the data on the UI thread
+                    log(data)
+                } catch (e: Exception) {
+                    log("Exception ${e.message}")
+                }
             }
             log("end")
         }
@@ -31,7 +35,8 @@ class Sample2 {
     private suspend fun downloadDataAsync(): String {
         return suspendCoroutine { cont ->
             try {
-                cont.resume(fetchResult2(0))
+                throw java.lang.NullPointerException("aa");
+                //cont.resume(fetchResult2(0))
             } catch (e: Exception) {
                 cont.resumeWithException(e)
             }

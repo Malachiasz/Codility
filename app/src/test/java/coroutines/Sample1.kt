@@ -9,12 +9,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.newFixedThreadPoolContext
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Test
 import java.lang.Thread.sleep
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 
 class Sample1 {
 
@@ -31,13 +36,19 @@ class Sample1 {
     }
 
     private suspend fun fetchResult(id: Int): String {
-        sleep(1000)
-        val dateFormat = SimpleDateFormat("mm:ss")
-        val millisInString = dateFormat.format(Date())
-        if (id == 2) {
-            throw NullPointerException("a nuller")
+        return suspendCoroutine { cont ->
+            try {
+                sleep(1000)
+                val dateFormat = SimpleDateFormat("mm:ss")
+                val millisInString = dateFormat.format(Date())
+                if (id == 2) {
+                    throw NullPointerException("a nuller")
+                }
+                cont.resume("[RESULT:$millisInString]")
+            } catch (e: Exception) {
+                cont.resumeWithException(e)
+            }
         }
-        return "[RESULT:$millisInString]"
     }
 
     @Test
@@ -133,8 +144,8 @@ class Sample1 {
                         uiConfinedString = result
                         log("Publishing result $result")
                         throw java.lang.NullPointerException("aa")
-                    }.await()
-                }.await()
+                    }
+                }
             } catch (e: Exception) {
                 System.out.println("Exception got caught: ${e.message}")
             }
@@ -142,9 +153,11 @@ class Sample1 {
         }
     }
 
+
     // submition blocks caller thread
     @Test
     fun test5_runOnBackgroundThreadAndPublishesOnCurrentThreadThreadPool() {
+        // Guave used for ThreadFactoryBuilder
         val backgroundContext = Executors.newSingleThreadExecutor(ThreadFactoryBuilder().setNameFormat("Background").build())
         val uiContext = Executors.newSingleThreadExecutor(ThreadFactoryBuilder().setNameFormat("UIThread").build())
 
@@ -169,33 +182,163 @@ class Sample1 {
         log("END")
     }
 
-    interface ExceptionCallback {
-        fun OnError(e: Exception)
+    // Version 2
+    @Test
+    fun test5_runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines_NonBlocking() {
+        val backgroundContext = newFixedThreadPoolContext(2, "Background");
+        val uiContext = newFixedThreadPoolContext(1, "UIThread");
+
+        runBlocking {
+            runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines(uiContext, backgroundContext)
+        }
     }
 
-    @Test
-    fun test5_runOnBackgroundThreadAndPublishesOnCurrentThreadThreadPool_NonBlocking() {
-        val backgroundContext = Executors.newSingleThreadExecutor(ThreadFactoryBuilder().setNameFormat("Background").build())
-        val uiContext = Executors.newSingleThreadExecutor(ThreadFactoryBuilder().setNameFormat("UIThread").build())
 
+    private suspend fun runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines(uiThread: CoroutineContext, backgroundThread: CoroutineContext) {
+        log("START suspend function")
         try {
-            backgroundContext.submit {
-                try {
-                    log("Computing result")
-                    val result = fetchResult2(1)
-                    uiContext.submit {
-                        uiConfinedString = result
-                        log("Publishing result $result")
-                        throw java.lang.NullPointerException("aa")
-                    }
-                } catch (e: Exception) {
-
+            withContext(backgroundThread) {
+                log("Computing result")
+                val result = fetchResult(1)
+                withContext(uiThread) {
+                    uiConfinedString = result
+                    log("Publishing result $result")
+                    throw java.lang.NullPointerException("aa")
                 }
             }
         } catch (e: Exception) {
             System.out.println("Exception got caught: ${e.message}")
         }
-        log("END")
+        log("END suspend function")
+    }
+
+    // Version 2b
+    @Test
+    fun test5_runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines_NonBlocking2b() {
+        val backgroundContext = newFixedThreadPoolContext(2, "Background");
+        val uiContext = newFixedThreadPoolContext(1, "UIThread");
+
+        runBlocking {
+            try {
+                withContext(backgroundContext) {
+                    log("Computing result")
+                    val result = fetchResult(1)
+                    withContext(uiContext) {
+                        uiConfinedString = result
+                        log("Publishing result $result")
+                        throw java.lang.NullPointerException("aa")
+                    }
+                }
+            } catch (e: Exception) {
+                System.out.println("Exception got caught: ${e.message}")
+            }
+            log("END suspend function")
+        }
+    }
+
+
+    // Version 3
+    @Test
+    fun test5_runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines_NonBlocking2() {
+        val backgroundContext = newFixedThreadPoolContext(2, "Background");
+        val uiContext = newFixedThreadPoolContext(1, "UIThread");
+
+        runBlocking(uiContext) {
+            runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines2(backgroundContext)
+        }
+    }
+
+    private suspend fun runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines2(backgroundThread: CoroutineContext) {
+        log("START suspend function")
+        try {
+            var result: String = ""
+            withContext(backgroundThread) {
+                log("Computing result")
+                result = fetchResult(1)
+            }
+            uiConfinedString = result
+            log("Publishing result $result")
+            throw java.lang.NullPointerException("aa")
+        } catch (e: Exception) {
+            System.out.println("Exception got caught: ${e.message}")
+        }
+        log("END suspend function")
+    }
+
+    // Version 4
+    @Test
+    fun test5_runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines_NonBlocking3() {
+        val backgroundContext = newFixedThreadPoolContext(2, "Background");
+        val uiContext = newFixedThreadPoolContext(1, "UIThread");
+
+        runBlocking(uiContext) {
+            runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines3(backgroundContext)
+        }
+    }
+
+    private suspend fun runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines3(backgroundThread: CoroutineContext) {
+        log("START suspend function")
+        try {
+            log("Computing result")
+            val result: String = fetchResult(1, backgroundThread)
+            uiConfinedString = result
+            log("Publishing result $result")
+            throw java.lang.NullPointerException("aa")
+        } catch (e: Exception) {
+            System.out.println("Exception got caught: ${e.message}")
+        }
+        log("END suspend function")
+    }
+
+
+
+    private suspend fun fetchResult(id: Int, backgroundThread: CoroutineContext): String {
+        log("START suspend function fetchResult()")
+        return withContext(backgroundThread) {
+            sleep(1000)
+            val dateFormat = SimpleDateFormat("mm:ss")
+            val millisInString = dateFormat.format(Date())
+            if (id == 2) {
+                throw NullPointerException("a nuller")
+            }
+            log("END suspend function fetchResult()")
+            return@withContext "[RESULT:$millisInString]"
+        }
+    }
+
+    // Version 4b
+    @Test
+    fun test5_runOnBackgroundThreadAndPublishesOnCurrentThreadCoroutines_NonBlocking4() {
+        val backgroundContext = newFixedThreadPoolContext(2, "Background");
+        val uiContext = newFixedThreadPoolContext(1, "UIThread");
+
+        runBlocking(uiContext) {
+            log("START suspend function")
+            try {
+                log("Computing result")
+                val result: String = fetchResult2(1, backgroundContext)
+                uiConfinedString = result
+                log("Publishing result $result")
+                throw java.lang.NullPointerException("aa")
+            } catch (e: Exception) {
+                System.out.println("Exception got caught: ${e.message}")
+            }
+            log("END suspend function")
+        }
+    }
+
+    private suspend fun fetchResult2(id: Int, backgroundThread: CoroutineContext): String {
+        log("START suspend function fetchResult()")
+        return withContext(backgroundThread) {
+            sleep(1000)
+            val dateFormat = SimpleDateFormat("mm:ss")
+            val millisInString = dateFormat.format(Date())
+            if (id == 2) {
+                throw NullPointerException("a potential exception")
+            }
+            log("END suspend function fetchResult()")
+            return@withContext "[RESULT:$millisInString]"
+        }
     }
 }
 
